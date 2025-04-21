@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'dart:io';
+import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
@@ -16,6 +17,7 @@ class TransportCardData {
   final String alias;
   final String image;
   final String? icon;
+  final String? nfcInfo;
 
   TransportCardData({
     required this.type,
@@ -23,6 +25,7 @@ class TransportCardData {
     required this.alias,
     required this.image,
     this.icon,
+    this.nfcInfo,
   });
 
   TransportCardData copyWith({
@@ -31,6 +34,7 @@ class TransportCardData {
     String? alias,
     String? image,
     String? icon,
+    String? nfcInfo,
   }) =>
       TransportCardData(
         type: type ?? this.type,
@@ -51,6 +55,7 @@ class DatabaseHelper {
   static const columnAlias = 'alias';
   static const columnCardNumber = 'card_number';
   static const columnImage = 'image';
+  static const columnNfcInfo = 'nfc_info';
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -72,7 +77,8 @@ class DatabaseHelper {
           $columnCardNumber TEXT NOT NULL,
           $columnAlias TEXT NOT NULL,
           $columnImage TEXT,
-          $columnIcon TEXT
+          $columnIcon TEXT,
+          $columnNfcInfo TEXT
       )
       ''');
   }
@@ -85,6 +91,7 @@ class DatabaseHelper {
       columnAlias: card.alias,
       columnImage: card.image,
       columnIcon: card.icon,
+      columnNfcInfo: card.nfcInfo,
     });
   }
 
@@ -102,6 +109,7 @@ class DatabaseHelper {
         alias: maps[index][columnAlias],
         image: maps[index][columnImage] ?? 'assets/card_default.png',
         icon: maps[index][columnIcon],
+        nfcInfo: maps[index][columnNfcInfo],
       );
     });
   }
@@ -114,6 +122,7 @@ class DatabaseHelper {
         columnAlias: card.alias,
         columnImage: card.image,
         columnIcon: card.icon,
+        columnNfcInfo: card.nfcInfo,
       },
       where: '$columnCardNumber = ?',
       whereArgs: [card.cardNumber],
@@ -279,17 +288,33 @@ class _TransportCardListScreenState extends State<TransportCardListScreen> {
 
   void _saveCardToDatabase(NFCTag tag) async {
     if (tag.id.isEmpty) {
-      if(mounted) ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('El número de tarjeta no puede estar vacío')));
+      if (mounted) ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('El número de tarjeta no puede estar vacío')));
       return;
     }
 
     final existingCards = await dbHelper.getAllCards();
     if (existingCards.any((card) => card.cardNumber == tag.id)) {
-        if(mounted) {
-           ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('Ya existe una tarjeta con este número')));
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('Ya existe una tarjeta con este número')));
+      }
       return;
     }
+
+    // Convertimos la info del tag en JSON legible para almacenarla
+    final nfcInfoJson = jsonEncode({
+      'type': tag.type,
+      'standard': tag.standard,
+      'id': tag.id,
+      'atqa': tag.atqa,
+      'sak': tag.sak,
+      'historicalBytes': tag.historicalBytes,
+      'protocolInfo': tag.protocolInfo,
+      'applicationData': tag.applicationData,
+      'higherLayerResponse': tag.higherLayerResponse,
+      'manufacturer': tag.manufacturer,
+      'systemCode': tag.systemCode,
+      'dsfId': tag.dsfId,
+    });
 
     TransportCardData newCard = TransportCardData(
       type: "NFC",
@@ -297,11 +322,13 @@ class _TransportCardListScreenState extends State<TransportCardListScreen> {
       alias: "New Card NFC",
       image: "assets/card_default.png",
       icon: null,
+      nfcInfo: nfcInfoJson,
     );
+
     await dbHelper.insert(newCard);
     _refreshCards();
     if (mounted) {
-         ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('Tarjeta guardada correctamente')));
+      ScaffoldMessenger.of(context as BuildContext).showSnackBar(const SnackBar(content: Text('Tarjeta guardada correctamente')));
     }
   }
 
@@ -350,6 +377,10 @@ class _TransportCardListScreenState extends State<TransportCardListScreen> {
     await dbHelper.delete(cardNumber);
     _refreshCards();
   }
+}
+
+extension on NFCTag {
+  get higherLayerResponse => null;
 }
 
 class TransportCardWidget extends StatelessWidget {
